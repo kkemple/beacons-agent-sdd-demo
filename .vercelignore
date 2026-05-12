@@ -1,0 +1,11 @@
+.output
+.swc
+.ash
+.turbo
+.agents
+.codex
+.github
+.workflow-data
+dist
+research
+node_modules
