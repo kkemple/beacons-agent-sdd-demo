@@ -59,13 +59,6 @@ export default defineTool({
         if (data.length < 100 || reviewComments.length >= 500) break;
         page += 1;
       }
-
-
-        issueComments: issueComments.length,
-        reviewComments: reviewComments.length,
-        issueCapped: issueComments.length >= 500,
-        reviewCapped: reviewComments.length >= 500,
-      });
     }
 
     const output = {
