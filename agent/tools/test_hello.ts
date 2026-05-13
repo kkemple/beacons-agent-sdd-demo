@@ -7,6 +7,9 @@ export default defineTool({
     greeting: z.string(),
   }),
   async execute(input) {
-    return `Hello, ${input.greeting}!`;
+    console.info("[tool:test_hello] requested", { greeting: input.greeting });
+    const output = `Hello, ${input.greeting}!`;
+    console.info("[tool:test_hello] completed", { outputLength: output.length });
+    return output;
   },
 });

@@ -1,6 +1,7 @@
 import { getSandbox } from "experimental-ash/sandbox";
 import { defineTool } from "experimental-ash/tools";
 import z from "zod";
+import { recordToolEvent } from "../lib/telemetry.js";
 
 export default defineTool({
   description: "Create a new branch for code remediation work. Requires approval before execution.",
@@ -11,9 +12,9 @@ export default defineTool({
   }),
   async execute(input) {
     const startedAt = Date.now();
-    console.info("[tool:gh_create_branch] requested", { branch: input.branch_name, baseBranch: input.base_branch ?? "default", repo: input.repo ?? process.env.GITHUB_REPOSITORY ?? null });
+    recordToolEvent("gh_create_branch", "requested", { branch: input.branch_name, baseBranch: input.base_branch ?? "default", repo: input.repo ?? process.env.GITHUB_REPOSITORY ?? null });
     const sandbox = await getSandbox();
-    console.info("[tool:gh_create_branch] sandbox acquired");
+    recordToolEvent("gh_create_branch", "sandbox_acquired");
     const encodedInput = Buffer.from(JSON.stringify(input)).toString("base64");
     const marker = "__ASH_TOOL_RESULT__";
     const result = await sandbox.runCommand(`node <<'ASH_SANDBOX_NODE'
@@ -83,18 +84,18 @@ emit({
 });
 ASH_SANDBOX_NODE`);
 
-    console.info("[tool:gh_create_branch] sandbox command finished", { exitCode: result.exitCode, durationMs: Date.now() - startedAt });
+    recordToolEvent("gh_create_branch", "sandbox_command_finished", { exitCode: result.exitCode, durationMs: Date.now() - startedAt });
     if (result.exitCode !== 0) {
-      console.error("[tool:gh_create_branch] sandbox command failed", { exitCode: result.exitCode, stderr: result.stderr.slice(0, 2000) });
+      recordToolEvent("gh_create_branch", "sandbox_command_failed", { exitCode: result.exitCode });
       throw new Error(`Sandbox command failed (${result.exitCode}): ${result.stderr || result.stdout}`);
     }
     const line = result.stdout.split("\n").reverse().find((entry) => entry.startsWith(marker));
     if (!line) {
-      console.error("[tool:gh_create_branch] missing result marker", { stdoutBytes: result.stdout.length, stderrBytes: result.stderr.length });
+      recordToolEvent("gh_create_branch", "missing_result_marker", { stdoutBytes: result.stdout.length, stderrBytes: result.stderr.length });
       throw new Error(`Sandbox command did not return a result: ${result.stdout || result.stderr}`);
     }
     const output = JSON.parse(line.slice(marker.length));
-    console.info("[tool:gh_create_branch] completed", { branch: output.branch, sha: output.sha, durationMs: Date.now() - startedAt });
+    recordToolEvent("gh_create_branch", "completed", { branch: output.branch, sha: output.sha, durationMs: Date.now() - startedAt });
     return output;
   },
 });

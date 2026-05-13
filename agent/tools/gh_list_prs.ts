@@ -14,13 +14,17 @@ export default defineTool({
   description: "List GitHub pull requests with optional filtering",
   inputSchema: ListPRsInput,
   async execute(input) {
+    const startedAt = Date.now();
+    console.info("[tool:gh_list_prs] requested", { state: input.state, head: input.head ?? null, base: input.base ?? null, limit: input.limit, repo: input.repo ?? process.env.GITHUB_REPOSITORY ?? null });
     const sandbox = await getSandbox();
+    console.info("[tool:gh_list_prs] sandbox acquired");
     const encodedInput = Buffer.from(JSON.stringify(input)).toString("base64");
     const marker = "__ASH_TOOL_RESULT__";
     const result = await sandbox.runCommand(`node <<'ASH_SANDBOX_NODE'
 const input = JSON.parse(Buffer.from(${JSON.stringify(encodedInput)}, "base64").toString("utf8"));
 const marker = ${JSON.stringify(marker)};
 function emit(value) { console.log(marker + JSON.stringify(value)); }
+function log(event, data = {}) { console.error("[tool:gh_list_prs] " + event + " " + JSON.stringify(data)); }
 (async () => {
 function parseRepo(repo) {
   const value = repo || process.env.GITHUB_REPOSITORY || "";
@@ -48,11 +52,14 @@ async function github(path) {
 }
 
 const { owner, repo } = parseRepo(input.repo);
+log("repo resolved", { owner, repo });
 const limit = Math.min(input.limit || 20, 100);
 const params = new URLSearchParams({ state: input.state === "all" ? "all" : input.state, per_page: String(limit) });
 if (input.head) params.set("head", input.head);
 if (input.base) params.set("base", input.base);
+log("pull requests request started", { state: input.state, head: input.head ?? null, base: input.base ?? null, limit });
 const data = await github("/repos/" + owner + "/" + repo + "/pulls?" + params.toString());
+log("pull requests response received", { fetched: data.length });
 const pull_requests = data.slice(0, input.limit).map((pr) => ({
   number: pr.number,
   title: pr.title,
@@ -64,6 +71,7 @@ const pull_requests = data.slice(0, input.limit).map((pr) => ({
   updated_at: pr.updated_at,
 }));
 
+log("pull requests filtered", { count: pull_requests.length });
 emit({
   total_count: pull_requests.length,
   pull_requests,
@@ -80,9 +88,18 @@ emit({
 });
 ASH_SANDBOX_NODE`);
 
-    if (result.exitCode !== 0) throw new Error(`Sandbox command failed (${result.exitCode}): ${result.stderr || result.stdout}`);
+    console.info("[tool:gh_list_prs] sandbox command finished", { exitCode: result.exitCode, durationMs: Date.now() - startedAt });
+    if (result.exitCode !== 0) {
+      console.error("[tool:gh_list_prs] sandbox command failed", { exitCode: result.exitCode, stderr: result.stderr.slice(0, 2000) });
+      throw new Error(`Sandbox command failed (${result.exitCode}): ${result.stderr || result.stdout}`);
+    }
     const line = result.stdout.split("\n").reverse().find((entry) => entry.startsWith(marker));
-    if (!line) throw new Error(`Sandbox command did not return a result: ${result.stdout || result.stderr}`);
-    return JSON.parse(line.slice(marker.length));
+    if (!line) {
+      console.error("[tool:gh_list_prs] missing result marker", { stdoutBytes: result.stdout.length, stderrBytes: result.stderr.length });
+      throw new Error(`Sandbox command did not return a result: ${result.stdout || result.stderr}`);
+    }
+    const output = JSON.parse(line.slice(marker.length));
+    console.info("[tool:gh_list_prs] completed", { count: output.total_count, durationMs: Date.now() - startedAt });
+    return output;
   },
 });

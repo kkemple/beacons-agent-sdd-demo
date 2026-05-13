@@ -12,13 +12,17 @@ export default defineTool({
   description: "Fetch file contents from a GitHub repository for investigation",
   inputSchema: GetFileInput,
   async execute(input) {
+    const startedAt = Date.now();
+    console.info("[tool:gh_get_file] requested", { path: input.path, ref: input.ref ?? null, repo: input.repo ?? process.env.GITHUB_REPOSITORY ?? null });
     const sandbox = await getSandbox();
+    console.info("[tool:gh_get_file] sandbox acquired");
     const encodedInput = Buffer.from(JSON.stringify(input)).toString("base64");
     const marker = "__ASH_TOOL_RESULT__";
     const result = await sandbox.runCommand(`node <<'ASH_SANDBOX_NODE'
 const input = JSON.parse(Buffer.from(${JSON.stringify(encodedInput)}, "base64").toString("utf8"));
 const marker = ${JSON.stringify(marker)};
 function emit(value) { console.log(marker + JSON.stringify(value)); }
+function log(event, data = {}) { console.error("[tool:gh_get_file] " + event + " " + JSON.stringify(data)); }
 function parseRepo(repo) {
   const value = repo || process.env.GITHUB_REPOSITORY || "";
   const [owner, name] = value.split("/");
@@ -44,10 +48,13 @@ async function github(path) {
 }
 (async () => {
   const { owner, repo } = parseRepo(input.repo);
+  log("repo resolved", { owner, repo });
   const params = new URLSearchParams();
   if (input.ref) params.set("ref", input.ref);
   const suffix = params.toString() ? "?" + params.toString() : "";
+  log("content request started", { path: input.path, ref: input.ref ?? null });
   const data = await github("/repos/" + owner + "/" + repo + "/contents/" + input.path.split("/").map(encodeURIComponent).join("/") + suffix);
+  log("content response parsed", { path: input.path, kind: Array.isArray(data) ? "directory" : data.type, size: Array.isArray(data) ? data.length : data.size ?? null });
 
   if (Array.isArray(data)) {
     emit({ type: "directory", path: input.path, entries: data.map((entry) => ({ name: entry.name, type: entry.type, size: entry.size, path: entry.path })) });
@@ -59,6 +66,7 @@ async function github(path) {
     return;
   }
 
+  log("file content decoded", { path: data.path, size: data.size, encoding: data.encoding });
   emit({
     type: "file",
     path: data.path,
@@ -71,9 +79,18 @@ async function github(path) {
 });
 ASH_SANDBOX_NODE`);
 
-    if (result.exitCode !== 0) throw new Error(`Sandbox command failed (${result.exitCode}): ${result.stderr || result.stdout}`);
+    console.info("[tool:gh_get_file] sandbox command finished", { exitCode: result.exitCode, durationMs: Date.now() - startedAt });
+    if (result.exitCode !== 0) {
+      console.error("[tool:gh_get_file] sandbox command failed", { exitCode: result.exitCode, stderr: result.stderr.slice(0, 2000) });
+      throw new Error(`Sandbox command failed (${result.exitCode}): ${result.stderr || result.stdout}`);
+    }
     const line = result.stdout.split("\n").reverse().find((entry) => entry.startsWith(marker));
-    if (!line) throw new Error(`Sandbox command did not return a result: ${result.stdout || result.stderr}`);
-    return JSON.parse(line.slice(marker.length));
+    if (!line) {
+      console.error("[tool:gh_get_file] missing result marker", { stdoutBytes: result.stdout.length, stderrBytes: result.stderr.length });
+      throw new Error(`Sandbox command did not return a result: ${result.stdout || result.stderr}`);
+    }
+    const output = JSON.parse(line.slice(marker.length));
+    console.info("[tool:gh_get_file] completed", { type: output.type, path: output.path, size: output.size ?? null, durationMs: Date.now() - startedAt });
+    return output;
   },
 });

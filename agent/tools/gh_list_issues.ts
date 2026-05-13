@@ -14,13 +14,17 @@ export default defineTool({
   description: "List GitHub issues with optional filtering",
   inputSchema: ListIssuesInput,
   async execute(input) {
+    const startedAt = Date.now();
+    console.info("[tool:gh_list_issues] requested", { state: input.state, labels: input.labels ?? null, assignee: input.assignee ?? null, limit: input.limit, repo: input.repo ?? process.env.GITHUB_REPOSITORY ?? null });
     const sandbox = await getSandbox();
+    console.info("[tool:gh_list_issues] sandbox acquired");
     const encodedInput = Buffer.from(JSON.stringify(input)).toString("base64");
     const marker = "__ASH_TOOL_RESULT__";
     const result = await sandbox.runCommand(`node <<'ASH_SANDBOX_NODE'
 const input = JSON.parse(Buffer.from(${JSON.stringify(encodedInput)}, "base64").toString("utf8"));
 const marker = ${JSON.stringify(marker)};
 function emit(value) { console.log(marker + JSON.stringify(value)); }
+function log(event, data = {}) { console.error("[tool:gh_list_issues] " + event + " " + JSON.stringify(data)); }
 function parseRepo(repo) {
   const value = repo || process.env.GITHUB_REPOSITORY || "";
   const [owner, name] = value.split("/");
@@ -46,11 +50,14 @@ async function github(path) {
 }
 (async () => {
   const { owner, repo } = parseRepo(input.repo);
+  log("repo resolved", { owner, repo });
   const limit = Math.min(input.limit || 20, 100);
   const params = new URLSearchParams({ state: input.state === "all" ? "all" : input.state, per_page: String(limit) });
   if (input.labels) params.set("labels", input.labels);
   if (input.assignee) params.set("assignee", input.assignee);
+  log("issues request started", { state: input.state, labels: input.labels ?? null, assignee: input.assignee ?? null, limit });
   const data = await github("/repos/" + owner + "/" + repo + "/issues?" + params.toString());
+  log("issues response received", { fetched: data.length });
   const issues = data.filter((issue) => !issue.pull_request).slice(0, input.limit).map((issue) => ({
     number: issue.number,
     title: issue.title,
@@ -60,6 +67,7 @@ async function github(path) {
     assignees: (issue.assignees || []).map((assignee) => assignee.login),
     updated_at: issue.updated_at,
   }));
+  log("issues filtered", { count: issues.length });
   emit({ total_count: issues.length, issues, filters_applied: { state: input.state, labels: input.labels || null, assignee: input.assignee || null, limit: input.limit } });
 })().catch((error) => {
   console.error(error && error.stack ? error.stack : String(error));
@@ -67,9 +75,18 @@ async function github(path) {
 });
 ASH_SANDBOX_NODE`);
 
-    if (result.exitCode !== 0) throw new Error(`Sandbox command failed (${result.exitCode}): ${result.stderr || result.stdout}`);
+    console.info("[tool:gh_list_issues] sandbox command finished", { exitCode: result.exitCode, durationMs: Date.now() - startedAt });
+    if (result.exitCode !== 0) {
+      console.error("[tool:gh_list_issues] sandbox command failed", { exitCode: result.exitCode, stderr: result.stderr.slice(0, 2000) });
+      throw new Error(`Sandbox command failed (${result.exitCode}): ${result.stderr || result.stdout}`);
+    }
     const line = result.stdout.split("\n").reverse().find((entry) => entry.startsWith(marker));
-    if (!line) throw new Error(`Sandbox command did not return a result: ${result.stdout || result.stderr}`);
-    return JSON.parse(line.slice(marker.length));
+    if (!line) {
+      console.error("[tool:gh_list_issues] missing result marker", { stdoutBytes: result.stdout.length, stderrBytes: result.stderr.length });
+      throw new Error(`Sandbox command did not return a result: ${result.stdout || result.stderr}`);
+    }
+    const output = JSON.parse(line.slice(marker.length));
+    console.info("[tool:gh_list_issues] completed", { count: output.total_count, durationMs: Date.now() - startedAt });
+    return output;
   },
 });

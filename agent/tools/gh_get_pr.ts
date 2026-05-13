@@ -12,13 +12,17 @@ export default defineTool({
   description: "Fetch GitHub pull request details for case investigation",
   inputSchema: GetPRInput,
   async execute(input) {
+    const startedAt = Date.now();
+    console.info("[tool:gh_get_pr] requested", { pr: input.pr_number, includeComments: input.include_comments, repo: input.repo ?? process.env.GITHUB_REPOSITORY ?? null });
     const sandbox = await getSandbox();
+    console.info("[tool:gh_get_pr] sandbox acquired");
     const encodedInput = Buffer.from(JSON.stringify(input)).toString("base64");
     const marker = "__ASH_TOOL_RESULT__";
     const result = await sandbox.runCommand(`node <<'ASH_SANDBOX_NODE'
 const input = JSON.parse(Buffer.from(${JSON.stringify(encodedInput)}, "base64").toString("utf8"));
 const marker = ${JSON.stringify(marker)};
 function emit(value) { console.log(marker + JSON.stringify(value)); }
+function log(event, data = {}) { console.error("[tool:gh_get_pr] " + event + " " + JSON.stringify(data)); }
 (async () => {
 function parseRepo(repo) {
   const value = repo || process.env.GITHUB_REPOSITORY || "";
@@ -46,10 +50,15 @@ async function github(path) {
 }
 
 const { owner, repo } = parseRepo(input.repo);
+log("repo resolved", { owner, repo });
+log("pull request request started", { pr: input.pr_number });
 const pr = await github("/repos/" + owner + "/" + repo + "/pulls/" + input.pr_number);
+log("pull request received", { pr: pr.number, state: pr.state, head: pr.head && pr.head.ref, base: pr.base && pr.base.ref });
 let comments;
 if (input.include_comments) {
+  log("comments request started", { pr: input.pr_number, perPage: 50 });
   comments = await github("/repos/" + owner + "/" + repo + "/issues/" + input.pr_number + "/comments?per_page=50");
+  log("comments received", { count: comments.length });
 }
 
 emit({
@@ -82,9 +91,18 @@ emit({
 });
 ASH_SANDBOX_NODE`);
 
-    if (result.exitCode !== 0) throw new Error(`Sandbox command failed (${result.exitCode}): ${result.stderr || result.stdout}`);
+    console.info("[tool:gh_get_pr] sandbox command finished", { exitCode: result.exitCode, durationMs: Date.now() - startedAt });
+    if (result.exitCode !== 0) {
+      console.error("[tool:gh_get_pr] sandbox command failed", { exitCode: result.exitCode, stderr: result.stderr.slice(0, 2000) });
+      throw new Error(`Sandbox command failed (${result.exitCode}): ${result.stderr || result.stdout}`);
+    }
     const line = result.stdout.split("\n").reverse().find((entry) => entry.startsWith(marker));
-    if (!line) throw new Error(`Sandbox command did not return a result: ${result.stdout || result.stderr}`);
-    return JSON.parse(line.slice(marker.length));
+    if (!line) {
+      console.error("[tool:gh_get_pr] missing result marker", { stdoutBytes: result.stdout.length, stderrBytes: result.stderr.length });
+      throw new Error(`Sandbox command did not return a result: ${result.stdout || result.stderr}`);
+    }
+    const output = JSON.parse(line.slice(marker.length));
+    console.info("[tool:gh_get_pr] completed", { pr: output.number, state: output.state, head: output.head_branch, base: output.base_branch, durationMs: Date.now() - startedAt });
+    return output;
   },
 });
