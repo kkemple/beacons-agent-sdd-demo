@@ -1,6 +1,7 @@
 import z from "zod";
 import { defineTool } from "experimental-ash/tools";
 import { getSandbox } from "experimental-ash/sandbox";
+import { recordToolEvent } from "../lib/telemetry.js";
 
 const ListPRsInput = z.object({
   state: z.enum(["open", "closed", "all"]).default("open").describe("PR state to filter by"),
@@ -15,16 +16,16 @@ export default defineTool({
   inputSchema: ListPRsInput,
   async execute(input) {
     const startedAt = Date.now();
-    console.info("[tool:gh_list_prs] requested", { state: input.state, head: input.head ?? null, base: input.base ?? null, limit: input.limit, repo: input.repo ?? process.env.GITHUB_REPOSITORY ?? null });
+    recordToolEvent("gh_list_prs", "requested", { state: input.state, head: input.head ?? null, base: input.base ?? null, limit: input.limit, repo: input.repo ?? process.env.GITHUB_REPOSITORY ?? null });
     const sandbox = await getSandbox();
-    console.info("[tool:gh_list_prs] sandbox acquired");
+    recordToolEvent("gh_list_prs", "sandbox_acquired");
     const encodedInput = Buffer.from(JSON.stringify(input)).toString("base64");
     const marker = "__ASH_TOOL_RESULT__";
     const result = await sandbox.runCommand(`node <<'ASH_SANDBOX_NODE'
 const input = JSON.parse(Buffer.from(${JSON.stringify(encodedInput)}, "base64").toString("utf8"));
 const marker = ${JSON.stringify(marker)};
 function emit(value) { console.log(marker + JSON.stringify(value)); }
-function log(event, data = {}) { console.error("[tool:gh_list_prs] " + event + " " + JSON.stringify(data)); }
+function log(_event, _data = {}) {}
 (async () => {
 function parseRepo(repo) {
   const value = repo || process.env.GITHUB_REPOSITORY || "";
@@ -88,18 +89,18 @@ emit({
 });
 ASH_SANDBOX_NODE`);
 
-    console.info("[tool:gh_list_prs] sandbox command finished", { exitCode: result.exitCode, durationMs: Date.now() - startedAt });
+    recordToolEvent("gh_list_prs", "sandbox_command_finished", { exitCode: result.exitCode, durationMs: Date.now() - startedAt });
     if (result.exitCode !== 0) {
-      console.error("[tool:gh_list_prs] sandbox command failed", { exitCode: result.exitCode, stderr: result.stderr.slice(0, 2000) });
+      recordToolEvent("gh_list_prs", "sandbox_command_failed", { exitCode: result.exitCode });
       throw new Error(`Sandbox command failed (${result.exitCode}): ${result.stderr || result.stdout}`);
     }
     const line = result.stdout.split("\n").reverse().find((entry) => entry.startsWith(marker));
     if (!line) {
-      console.error("[tool:gh_list_prs] missing result marker", { stdoutBytes: result.stdout.length, stderrBytes: result.stderr.length });
+      recordToolEvent("gh_list_prs", "missing_result_marker", { stdoutBytes: result.stdout.length, stderrBytes: result.stderr.length });
       throw new Error(`Sandbox command did not return a result: ${result.stdout || result.stderr}`);
     }
     const output = JSON.parse(line.slice(marker.length));
-    console.info("[tool:gh_list_prs] completed", { count: output.total_count, durationMs: Date.now() - startedAt });
+    recordToolEvent("gh_list_prs", "completed", { count: output.total_count, durationMs: Date.now() - startedAt });
     return output;
   },
 });

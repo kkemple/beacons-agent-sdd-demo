@@ -1,5 +1,6 @@
 import { defineTool } from "experimental-ash/tools";
 import z from "zod";
+import { recordToolEvent } from "../lib/telemetry.js";
 
 export default defineTool({
   description: "Say hello",
@@ -7,9 +8,9 @@ export default defineTool({
     greeting: z.string(),
   }),
   async execute(input) {
-    console.info("[tool:test_hello] requested", { greeting: input.greeting });
+    recordToolEvent("test_hello", "requested", { greeting: input.greeting });
     const output = `Hello, ${input.greeting}!`;
-    console.info("[tool:test_hello] completed", { outputLength: output.length });
+    recordToolEvent("test_hello", "completed", { outputLength: output.length });
     return output;
   },
 });

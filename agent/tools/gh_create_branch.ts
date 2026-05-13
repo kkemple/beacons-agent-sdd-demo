@@ -21,7 +21,7 @@ export default defineTool({
 const input = JSON.parse(Buffer.from(${JSON.stringify(encodedInput)}, "base64").toString("utf8"));
 const marker = ${JSON.stringify(marker)};
 function emit(value) { console.log(marker + JSON.stringify(value)); }
-function log(event, data = {}) { console.error("[tool:gh_create_branch] " + event + " " + JSON.stringify(data)); }
+function log(_event, _data = {}) {}
 (async () => {
 function parseRepo(repo) {
   const value = repo || process.env.GITHUB_REPOSITORY || "";
