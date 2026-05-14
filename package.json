@@ -1,5 +1,5 @@
 {
-  "name": "ash-agents",
+  "name": "beacons-agent",
   "version": "0.0.0",
   "type": "module",
   "imports": {
@@ -7,13 +7,13 @@
     "#evals/*": "./evals/*"
   },
   "scripts": {
-    "build": "ash build",
+    "build": "rm -rf .output && ash build",
     "dev": "ash dev",
-    "typecheck": "tsgo"
+    "typecheck": "tsgo",
+    "info": "ash info"
   },
   "dependencies": {
     "@octokit/rest": "^22.0.1",
-    "@opentelemetry/api": "^1.9.1",
     "@vercel/otel": "latest",
     "ai": "7.0.0-canary.121",
     "experimental-ash": "^0.4.0-alpha.4",
