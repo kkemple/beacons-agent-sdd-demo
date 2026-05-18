@@ -11,6 +11,9 @@ importers:
       '@octokit/rest':
         specifier: ^22.0.1
         version: 22.0.1
+      '@vercel/connect':
+        specifier: 0.0.4-alpha.8
+        version: 0.0.4-alpha.8(experimental-ash@0.14.1(@opentelemetry/api@1.9.1)(ai@7.0.0-canary.121(zod@4.4.3)))
       '@vercel/otel':
         specifier: latest
         version: 2.1.2(@opentelemetry/api-logs@0.217.0)(@opentelemetry/api@1.9.1)(@opentelemetry/instrumentation@0.217.0(@opentelemetry/api@1.9.1))(@opentelemetry/resources@2.7.1(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.217.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.7.1(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.7.1(@opentelemetry/api@1.9.1))
@@ -312,6 +315,20 @@ packages:
   '@typescript/native-preview@7.0.0-dev.20260331.1':
     resolution: {integrity: sha512-Gfy2J/LhydkOHOw+ZWRw0M8Xl3O2bzQXLXIYITdMz2N4GpMm8misAvvCzhqMacOGvazKr1FsL9LIIW2kxk6kzw==}
     hasBin: true
+
+  '@vercel/connect@0.0.4-alpha.8':
+    resolution: {integrity: sha512-cYMi8ICa46ik7Q9mFgA/8M7fYPzeNwSQnKotaOtyUkwzlC4pyxMj/H0TrNtnEQy/zcrXIwmRixD+P8elhFDmKg==}
+    peerDependencies:
+      '@auth/core': '>=0.37.0'
+      better-auth: '>=1.5.0'
+      experimental-ash: '>=0.8.2'
+    peerDependenciesMeta:
+      '@auth/core':
+        optional: true
+      better-auth:
+        optional: true
+      experimental-ash:
+        optional: true
 
   '@vercel/oidc@3.2.0':
     resolution: {integrity: sha512-UycprH3T6n3jH0k44NHMa7pnFHGu/N05MjojYr+Mc6I7obkoLIJujSWwin1pCvdy/eOxrI/l3uDLQsmcrOb4ug==}
@@ -868,6 +885,12 @@ snapshots:
       '@typescript/native-preview-linux-x64': 7.0.0-dev.20260331.1
       '@typescript/native-preview-win32-arm64': 7.0.0-dev.20260331.1
       '@typescript/native-preview-win32-x64': 7.0.0-dev.20260331.1
+
+  '@vercel/connect@0.0.4-alpha.8(experimental-ash@0.14.1(@opentelemetry/api@1.9.1)(ai@7.0.0-canary.121(zod@4.4.3)))':
+    dependencies:
+      '@vercel/oidc': 3.2.0
+    optionalDependencies:
+      experimental-ash: 0.14.1(@opentelemetry/api@1.9.1)(ai@7.0.0-canary.121(zod@4.4.3))
 
   '@vercel/oidc@3.2.0': {}
 
