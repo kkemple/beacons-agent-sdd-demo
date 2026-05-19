@@ -12,7 +12,7 @@ const MergePullRequestInput = z.object({
 });
 
 export default defineTool({
-  description: "Merge a GitHub pull request in the demo repository. Requires approval.",
+  description: "Merge a GitHub pull request in the demo repository.",
   inputSchema: MergePullRequestInput,
   async execute(input) {
     const octokit = getOctokit();
