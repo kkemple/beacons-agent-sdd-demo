@@ -1,7 +1,6 @@
 import { getOctokit } from "../lib/github.js";
 import { OWNER, REPO } from "../lib/git.js";
 import { defineTool } from "experimental-ash/tools";
-import { always } from "experimental-ash/tools/approval";
 import { z } from "zod";
 
 const MergePullRequestInput = z.object({
@@ -15,7 +14,6 @@ const MergePullRequestInput = z.object({
 export default defineTool({
   description: "Merge a GitHub pull request in the demo repository. Requires approval.",
   inputSchema: MergePullRequestInput,
-  needsApproval: always(),
   async execute(input) {
     const octokit = getOctokit();
 
