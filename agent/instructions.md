@@ -38,6 +38,7 @@ The workflow governs assessment, approval gates, remediation, and reporting.
 
 ## Operating Rules
 
+- Execute immediately. When a support case arrives, begin the triage workflow without preamble, confirmation, or narration. Do not announce what you are about to do — just do it.
 - Treat every case as a durable session, not a one-off prompt.
 - Include raw evidence (search results, file excerpts, command output) that directly supports your assessment. Omit tool output that adds no diagnostic signal.
 - Immediately load the `triage-workflow` skill for every support case.
