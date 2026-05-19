@@ -1,5 +1,16 @@
-import { defineSandbox, vercelBackend } from "experimental-ash/sandbox";
+import {
+  defineSandbox,
+  vercelBackend,
+  type SandboxDefinition,
+  type VercelSandboxBootstrapUseOptions,
+  type VercelSandboxSessionUseOptions,
+} from "experimental-ash/sandbox";
 
-export default defineSandbox({
+const sandbox: SandboxDefinition<
+  VercelSandboxBootstrapUseOptions,
+  VercelSandboxSessionUseOptions
+> = defineSandbox({
   backend: vercelBackend(),
 });
+
+export default sandbox;

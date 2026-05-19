@@ -13,7 +13,7 @@ importers:
         version: 22.0.1
       '@vercel/connect':
         specifier: 0.0.4-alpha.8
-        version: 0.0.4-alpha.8(experimental-ash@0.14.1(@opentelemetry/api@1.9.1)(ai@7.0.0-canary.121(zod@4.4.3)))
+        version: 0.0.4-alpha.8(experimental-ash@0.18.2(@opentelemetry/api@1.9.1)(ai@7.0.0-canary.121(zod@4.4.3)))
       '@vercel/otel':
         specifier: latest
         version: 2.1.2(@opentelemetry/api-logs@0.217.0)(@opentelemetry/api@1.9.1)(@opentelemetry/instrumentation@0.217.0(@opentelemetry/api@1.9.1))(@opentelemetry/resources@2.7.1(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.217.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.7.1(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.7.1(@opentelemetry/api@1.9.1))
@@ -21,8 +21,8 @@ importers:
         specifier: 7.0.0-canary.121
         version: 7.0.0-canary.121(zod@4.4.3)
       experimental-ash:
-        specifier: 0.14.1
-        version: 0.14.1(@opentelemetry/api@1.9.1)(ai@7.0.0-canary.121(zod@4.4.3))
+        specifier: 0.18.2
+        version: 0.18.2(@opentelemetry/api@1.9.1)(ai@7.0.0-canary.121(zod@4.4.3))
       zod:
         specifier: ^4.3.6
         version: 4.4.3
@@ -431,18 +431,21 @@ packages:
     resolution: {integrity: sha512-70QWGkr4snxr0OXLRWsFLeRBIRPuQOvt4s8QYjmUlmlkyTZkRqS7EDVRZtzU3TiyDbXSzaOeF0XUKy8PchzukQ==}
     engines: {node: '>=18.0.0'}
 
-  experimental-ash@0.14.1:
-    resolution: {integrity: sha512-kVCUiSPIDSHVhIzBwWGXNEyHpwHZRXb3zVAbW6MdcS7pjEIevcgOSVC1NHbfM5BfHvquJSE/xG1xV7OnMhvpFw==}
+  experimental-ash@0.18.2:
+    resolution: {integrity: sha512-44roN5NeR9Qlb2GAqCr7SHygM9g0PMsFZjjruNPtLXD+5OsKRJYofUE1QmA/NyIHqu5n9ic6KwoW1e6d6rkL9A==}
     engines: {node: '>=24'}
     hasBin: true
     peerDependencies:
       '@opentelemetry/api': ^1.9.0
       ai: 7.0.0-canary.138
       braintrust: '>=3.0.0'
+      react: ^19.2.6
     peerDependenciesMeta:
       '@opentelemetry/api':
         optional: true
       braintrust:
+        optional: true
+      react:
         optional: true
 
   exsolve@1.0.8:
@@ -886,11 +889,11 @@ snapshots:
       '@typescript/native-preview-win32-arm64': 7.0.0-dev.20260331.1
       '@typescript/native-preview-win32-x64': 7.0.0-dev.20260331.1
 
-  '@vercel/connect@0.0.4-alpha.8(experimental-ash@0.14.1(@opentelemetry/api@1.9.1)(ai@7.0.0-canary.121(zod@4.4.3)))':
+  '@vercel/connect@0.0.4-alpha.8(experimental-ash@0.18.2(@opentelemetry/api@1.9.1)(ai@7.0.0-canary.121(zod@4.4.3)))':
     dependencies:
       '@vercel/oidc': 3.2.0
     optionalDependencies:
-      experimental-ash: 0.14.1(@opentelemetry/api@1.9.1)(ai@7.0.0-canary.121(zod@4.4.3))
+      experimental-ash: 0.18.2(@opentelemetry/api@1.9.1)(ai@7.0.0-canary.121(zod@4.4.3))
 
   '@vercel/oidc@3.2.0': {}
 
@@ -944,7 +947,7 @@ snapshots:
 
   eventsource-parser@3.0.8: {}
 
-  experimental-ash@0.14.1(@opentelemetry/api@1.9.1)(ai@7.0.0-canary.121(zod@4.4.3)):
+  experimental-ash@0.18.2(@opentelemetry/api@1.9.1)(ai@7.0.0-canary.121(zod@4.4.3)):
     dependencies:
       ai: 7.0.0-canary.121(zod@4.4.3)
       nitro: 3.0.260429-beta
