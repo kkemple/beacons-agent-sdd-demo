@@ -1,10 +1,8 @@
 import { getOctokit } from "../lib/github.js";
+import { OWNER, REPO } from "../lib/git.js";
 import { defineTool } from "experimental-ash/tools";
 import { always } from "experimental-ash/tools/approval";
 import { z } from "zod";
-
-const OWNER = "kkemple";
-const REPO = "beacons-website-sdd-demo";
 
 const MergePullRequestInput = z.object({
   pull_number: z.number().int().positive().describe("Pull request number to merge."),
@@ -30,6 +28,7 @@ export default defineTool({
       commit_message: input.commit_message,
     });
 
+    let branchDeleted = false;
     if (input.delete_branch && mergeResult.merged) {
       const { data: pr } = await octokit.rest.pulls.get({
         owner: OWNER,
@@ -43,13 +42,17 @@ export default defineTool({
           repo: REPO,
           ref: `heads/${pr.head.ref}`,
         });
-      } catch {}
+        branchDeleted = true;
+      } catch {
+        branchDeleted = false;
+      }
     }
 
     return {
       merged: mergeResult.merged,
       sha: mergeResult.sha,
       message: mergeResult.message,
+      branchDeleted,
     };
   },
 });

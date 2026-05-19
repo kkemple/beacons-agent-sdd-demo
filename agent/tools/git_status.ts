@@ -1,13 +1,12 @@
 import { getSandbox } from "experimental-ash/sandbox";
 import { defineTool } from "experimental-ash/tools";
+import { CLONE_DIR } from "../lib/git.js";
 import { z } from "zod";
-
-const REPO = "beacons-website-sdd-demo";
-const CLONE_DIR = `/workspace/${REPO}`;
 
 export default defineTool({
   description: "Show git status, current branch, and recent log in the cloned repository sandbox.",
   inputSchema: z.object({}),
+
   async execute() {
     const sandbox = await getSandbox();
 
@@ -18,7 +17,7 @@ export default defineTool({
     ]);
 
     if (status.exitCode !== 0) {
-      return { ok: false, error: status.stderr || "Repository not found. Run clone_repo first." };
+      return { ok: false, error: status.stderr || "Repository not found. Run git_clone first." };
     }
 
     return {

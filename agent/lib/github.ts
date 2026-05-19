@@ -11,10 +11,3 @@ export function getOctokit(): Octokit {
 
   return sdk;
 }
-
-export function parseRepo(repo?: string): { owner: string; repo: string } {
-  const r = repo || process.env.GITHUB_REPOSITORY || "";
-  const [owner, repoName] = r.split("/");
-  if (!owner || !repoName) throw new Error(`Invalid or missing repo: "${r}". Provide owner/repo or set GITHUB_REPOSITORY.`);
-  return { owner, repo: repoName };
-}

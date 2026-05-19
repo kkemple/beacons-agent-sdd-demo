@@ -1,9 +1,7 @@
 import { getOctokit } from "../lib/github.js";
+import { OWNER, REPO } from "../lib/git.js";
 import { defineTool } from "experimental-ash/tools";
 import { z } from "zod";
-
-const OWNER = "kkemple";
-const REPO = "beacons-website-sdd-demo";
 
 const GetIssueInput = z.object({
   issue_number: z.number().int().positive().describe("Issue number to fetch."),

@@ -1,6 +1,6 @@
 import { defineAgent } from "experimental-ash";
 
 export default defineAgent({
-  model: "openai/gpt-5.3-codex",
+  model: "anthropic/claude-sonnet-4.6",
   compaction: { thresholdPercent: 0.75 },
 });

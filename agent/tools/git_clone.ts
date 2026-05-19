@@ -1,11 +1,7 @@
 import { getSandbox } from "experimental-ash/sandbox";
 import { defineTool } from "experimental-ash/tools";
+import { CLONE_DIR, getRemoteURL } from "../lib/git.js";
 import { z } from "zod";
-import { getGitHubURL } from "../lib/git.js";
-
-const OWNER = "kkemple";
-const REPO = "beacons-website-sdd-demo";
-const CLONE_DIR = `/workspace/${REPO}`;
 
 const CloneRepoInput = z.object({
   branch: z.string().optional().describe("Branch to checkout after cloning. Defaults to the repository default branch."),
@@ -14,21 +10,23 @@ const CloneRepoInput = z.object({
 export default defineTool({
   description: "Clone the demo repository into the sandbox. If already cloned, fetches latest and optionally checks out the specified branch.",
   inputSchema: CloneRepoInput,
+
   async execute(input) {
     const sandbox = await getSandbox();
+    const remote = getRemoteURL();
 
     const checkExists = await sandbox.runCommand(`test -d ${CLONE_DIR}/.git && echo exists || echo missing`);
     const alreadyCloned = checkExists.stdout.trim() === "exists";
 
     if (!alreadyCloned) {
-      const cloneResult = await sandbox.runCommand(
-        `git clone ${getGitHubURL()}/${OWNER}/${REPO}.git ${CLONE_DIR}`,
-      );
+      const cloneResult = await sandbox.runCommand(`git clone ${remote} ${CLONE_DIR}`);
       if (cloneResult.exitCode !== 0) {
         return { ok: false, error: cloneResult.stderr || cloneResult.stdout };
       }
     } else {
-      const fetchResult = await sandbox.runCommand(`cd ${CLONE_DIR} && git fetch --all`);
+      // Update the remote URL in case token rotated, then fetch
+      await sandbox.runCommand(`cd ${CLONE_DIR} && git remote set-url origin ${remote}`);
+      const fetchResult = await sandbox.runCommand(`cd ${CLONE_DIR} && git fetch origin`);
       if (fetchResult.exitCode !== 0) {
         return { ok: false, error: fetchResult.stderr || fetchResult.stdout };
       }

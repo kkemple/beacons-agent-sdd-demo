@@ -1,10 +1,19 @@
 import { getSandbox } from "experimental-ash/sandbox";
 import { defineTool } from "experimental-ash/tools";
 import { getOctokit } from "../lib/github.js";
+import { CLONE_DIR } from "../lib/git.js";
 import { z } from "zod";
 
-const REPO = "beacons-website-sdd-demo";
-const CLONE_DIR = `/workspace/${REPO}`;
+// Cache the authenticated user to avoid an API call on every commit
+let cachedUser: { login: string; id: number } | null = null;
+
+async function getGitUser() {
+  if (!cachedUser) {
+    const { data } = await getOctokit().users.getAuthenticated();
+    cachedUser = { login: data.login, id: data.id };
+  }
+  return cachedUser;
+}
 
 const GitCommitInput = z.object({
   message: z.string().min(1).describe("Commit message following conventional commit format."),
@@ -15,9 +24,11 @@ const GitCommitInput = z.object({
 export default defineTool({
   description: "Stage and commit changes in the cloned repository sandbox.",
   inputSchema: GitCommitInput,
+
   async execute(input) {
     const sandbox = await getSandbox();
 
+    // Stage files
     if (input.add_all) {
       const addResult = await sandbox.runCommand(`cd ${CLONE_DIR} && git add -A`);
       if (addResult.exitCode !== 0) {
@@ -31,7 +42,8 @@ export default defineTool({
       }
     }
 
-    const { data: user } = await getOctokit().users.getAuthenticated();
+    // Commit with token owner's identity
+    const user = await getGitUser();
     const commitResult = await sandbox.runCommand(
       `cd ${CLONE_DIR} && git -c user.name="${user.login}" -c user.email="${user.id}+${user.login}@users.noreply.github.com" commit -m ${JSON.stringify(input.message)}`,
     );
