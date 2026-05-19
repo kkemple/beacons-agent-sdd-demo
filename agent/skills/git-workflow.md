@@ -1,105 +1,84 @@
 ---
 name: git-workflow
 description: >
-  Git workflow assistant for branching, PRs, and conflict resolution. Use when
-  the user asks about git strategy, branch management, PR workflow, or needs
-  non-interactive git operations.
+  Git workflow using sandbox tools for branching, PRs, and conflict resolution.
+  Use when the user asks about git strategy, branch management, PR workflow, or
+  needs git operations in the sandbox environment.
 ---
 
 # Git Workflow
 
-Help with Git operations and workflow strategy.
+Help with Git operations and workflow strategy using sandbox tools.
+
+## Important: Tool-Based Execution
+
+All git and file operations MUST use the sandbox tools. Never attempt direct git
+access or shell execution outside of the provided tools.
+
+| Operation | Tool |
+| --- | --- |
+| Clone / fetch | `git_clone` |
+| Check state | `git_status` |
+| View changes | `git_diff` |
+| Read files | `read_file` |
+| Write files | `write_file` |
+| Commit | `git_commit` |
+| Push | `git_push` |
+| Branch, merge, other git ops | `bash` |
+| Open PR | `github_create_pull_request` |
 
 ## Execution Flow
 
 When performing Git operations, follow this sequence:
-1. **Assess**: Check the current state using `git status` and `git branch -a`.
-2. **Execute**: Run the requested git commands, always using non-interactive mode.
-3. **Verify**: Run `git status` or `git log --oneline -5` to confirm the operation succeeded.
-4. **Report**: Return a concise summary of the changes to the user.
+
+1. **Clone**: Use `git_clone` to ensure the repository is available in the sandbox.
+2. **Assess**: Use `git_status` to check current branch and working tree state.
+3. **Branch**: Use `bash` to create or switch branches (e.g., `git checkout -b fix/case-slug`).
+4. **Edit**: Use `read_file` to inspect files, `write_file` to apply changes.
+5. **Verify**: Use `bash` to run validation or tests. Use `git_diff` to review changes.
+6. **Commit**: Use `git_commit` with a conventional commit message.
+7. **Push**: Use `git_push` to push the branch to the remote.
+8. **PR**: Use `github_create_pull_request` to open the pull request after push.
+9. **Report**: Return a concise summary of the changes to the user.
 
 ## Error Recovery
 
-If an operation like merge or rebase fails due to conflicts, stop the execution loop immediately. Report the conflicted files (`git diff --name-only --diff-filter=U`) and ask the user if they want you to attempt automatic resolution or if they will resolve them manually.
+If an operation fails due to conflicts, use `bash` to inspect
+conflicted files (`git diff --name-only --diff-filter=U`). Stop the execution loop
+immediately, report the conflicted files, and ask the user if they want you to
+attempt automatic resolution or if they will resolve them manually.
 
 ## Branch Strategy
 
-```bash
-# Inspect current state
-git branch -a
-git log --oneline -20
-git status
-```
+Use `git_status` and `bash` (with `git branch -a`) to inspect current state.
 
 Recommend strategy based on project context:
 
 - **Solo**: `main` + short-lived feature branches
 - **Team**: `main` + `develop` + `feature/*` / `fix/*` branches
-- **Release cadence**: GitFlow (`main` / `develop` / `release/*` / `hotfix/*`)
 
-## PR / MR Workflow
+## PR Workflow
 
-1. `git diff main --stat` — review what changed
-2. Draft a clear title and description
-3. Suggest reviewers based on touched files: `git log --format='%an' -- <files>`
-4. Always include the full PR/MR URL in any summary or status update:
-   ```
-   PR: https://github.com/owner/repo/pull/42
-   ```
-   Retrieve with: `gh pr view --json url --jq .url` (GitHub) or `glab mr view --output json | jq .web_url` (GitLab)
+1. Use `git_diff` with `target: "main"` and `stat_only: true` to review what changed.
+2. Draft a clear title and description.
+3. Use `github_create_pull_request` after push with title, body, head branch, and base branch.
+4. Always include the full PR URL in any summary or status update.
 
 ## Conflict Resolution
 
-1. `git diff --name-only --diff-filter=U` — find conflicted files
-2. Read each conflicted file
-3. Understand both sides of the conflict
-4. Resolve with minimal changes, preserving intent from both sides
-
-## Interactive Rebase
-
-Guide through `git rebase -i` for cleaning history before a PR.
-
-If resolving conflicts during rebase, continue non-interactively:
-```bash
-GIT_EDITOR=true git rebase --continue
-```
+1. Use `bash` with `git diff --name-only --diff-filter=U` to find conflicted files.
+2. Use `read_file` to read each conflicted file.
+3. Understand both sides of the conflict.
+4. Use `write_file` to resolve with minimal changes, preserving intent from both sides.
+5. Use `bash` with `git add <files>` to mark as resolved.
 
 ## Non-Interactive Execution
 
-Always execute commands in non-interactive mode. You operate in a headless environment where interactive prompts will hang the process.
+All operations run in a headless sandbox. Always use non-interactive flags:
 
-**Commits** — explicitly pass the message on the command line:
-```bash
-git commit -m "fix(scope): message"
-```
+- Commits: use `git_commit` tool (handles `-m` flag automatically).
+- Rebase continue: use `bash` with `GIT_EDITOR=true git rebase --continue`.
+- Merge: use `bash` with `git merge --no-edit <branch>`.
 
-**Rebase continue** — `--no-edit` is not supported, you must use `GIT_EDITOR=true`:
-```bash
-GIT_EDITOR=true git rebase --continue
-# or
-git -c core.editor=true rebase --continue
-```
-
-**Merge** — reuse existing message:
-```bash
-git merge --no-edit
-```
-
-**Any other git command that could open an editor:**
-```bash
-GIT_EDITOR=true git <command>
-```
-
-**GitHub CLI** — disable prompts and provide all fields explicitly:
-```bash
-GH_PROMPT_DISABLED=1 gh pr create --title "..." --body "..."
-GH_PROMPT_DISABLED=1 gh pr merge --squash --delete-branch
-```
-
-**GitLab CLI** — pass the non-interactive yes flag and provide all fields explicitly:
-```bash
-glab mr create --title "..." --description "..." --yes
-glab mr merge --yes
-```
-
-If the user explicitly requests an interactive operation (like `git rebase -i`), explain that you cannot open an editor in the agent runtime, provide the exact terminal command they should run themselves, and ask them to return when they are done.
+Never attempt interactive operations. If the user requests one (like `git rebase -i`),
+explain that it cannot run in the sandbox and provide the command they should run locally.
