@@ -1,6 +1,5 @@
 import { getOctokit } from "../lib/github.js";
 import { defineTool } from "experimental-ash/tools";
-import { always } from "experimental-ash/tools/approval";
 import { z } from "zod";
 
 const OWNER = "kkemple";
@@ -16,9 +15,8 @@ const UpdatePullRequestInput = z.object({
 });
 
 export default defineTool({
-  description: "Update a GitHub pull request in the demo repository. Requires approval.",
+  description: "Update a GitHub pull request in the demo repository.",
   inputSchema: UpdatePullRequestInput,
-  needsApproval: always(),
   async execute(input) {
     const octokit = getOctokit();
     const { data } = await octokit.rest.pulls.update({

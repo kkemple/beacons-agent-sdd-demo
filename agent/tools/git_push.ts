@@ -1,8 +1,9 @@
 import { getSandbox } from "experimental-ash/sandbox";
 import { defineTool } from "experimental-ash/tools";
-import { always } from "experimental-ash/tools/approval";
+import { getGitHubURL } from "../lib/git.js";
 import { z } from "zod";
 
+const OWNER = "kkemple";
 const REPO = "beacons-website-sdd-demo";
 const CLONE_DIR = `/workspace/${REPO}`;
 
@@ -12,18 +13,18 @@ const GitPushInput = z.object({
 });
 
 export default defineTool({
-  description: "Push commits to the remote repository from the sandbox. Requires approval.",
+  description: "Push commits to the remote repository from the sandbox.",
   inputSchema: GitPushInput,
-  needsApproval: always(),
   async execute(input) {
     const sandbox = await getSandbox();
 
     const branchResult = await sandbox.runCommand(`cd ${CLONE_DIR} && git branch --show-current`);
     const branch = input.branch || branchResult.stdout.trim();
 
-    const upstreamFlag = input.set_upstream ? "-u origin" : "";
+    const remote = `${getGitHubURL()}${OWNER}/${REPO}.git`;
+    const upstreamFlag = input.set_upstream ? "-u" : "";
     const pushResult = await sandbox.runCommand(
-      `cd ${CLONE_DIR} && git push ${upstreamFlag} ${branch}`,
+      `cd ${CLONE_DIR} && git push ${upstreamFlag} ${remote} ${branch}`,
     );
 
     if (pushResult.exitCode !== 0) {

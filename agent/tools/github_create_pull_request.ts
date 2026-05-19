@@ -1,6 +1,5 @@
 import { getOctokit } from "../lib/github.js";
 import { defineTool } from "experimental-ash/tools";
-import { always } from "experimental-ash/tools/approval";
 import { z } from "zod";
 
 const OWNER = "kkemple";
@@ -15,9 +14,8 @@ const CreatePullRequestInput = z.object({
 });
 
 export default defineTool({
-  description: "Create a GitHub pull request in the demo repository after a branch has been pushed. Requires approval.",
+  description: "Create a GitHub pull request in the demo repository after a branch has been pushed.",
   inputSchema: CreatePullRequestInput,
-  needsApproval: always(),
   async execute(input) {
     const octokit = getOctokit();
     const { data } = await octokit.rest.pulls.create({

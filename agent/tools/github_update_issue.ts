@@ -1,6 +1,5 @@
 import { getOctokit } from "../lib/github.js";
 import { defineTool } from "experimental-ash/tools";
-import { always } from "experimental-ash/tools/approval";
 import { z } from "zod";
 
 const OWNER = "kkemple";
@@ -17,9 +16,8 @@ const UpdateIssueInput = z.object({
 });
 
 export default defineTool({
-  description: "Update a GitHub issue in the demo repository. Requires approval.",
+  description: "Update a GitHub issue in the demo repository.",
   inputSchema: UpdateIssueInput,
-  needsApproval: always(),
   async execute(input) {
     const octokit = getOctokit();
     const { data } = await octokit.rest.issues.update({

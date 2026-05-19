@@ -1,6 +1,7 @@
 import { getSandbox } from "experimental-ash/sandbox";
 import { defineTool } from "experimental-ash/tools";
 import { z } from "zod";
+import { getGitHubURL } from "../lib/git.js";
 
 const OWNER = "kkemple";
 const REPO = "beacons-website-sdd-demo";
@@ -21,7 +22,7 @@ export default defineTool({
 
     if (!alreadyCloned) {
       const cloneResult = await sandbox.runCommand(
-        `git clone https://x-access-token:$GITHUB_TOKEN@github.com/${OWNER}/${REPO}.git ${CLONE_DIR}`,
+        `git clone ${getGitHubURL()}/${OWNER}/${REPO}.git ${CLONE_DIR}`,
       );
       if (cloneResult.exitCode !== 0) {
         return { ok: false, error: cloneResult.stderr || cloneResult.stdout };

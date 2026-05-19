@@ -1,6 +1,6 @@
 import { getSandbox } from "experimental-ash/sandbox";
 import { defineTool } from "experimental-ash/tools";
-import { always } from "experimental-ash/tools/approval";
+import { getOctokit } from "../lib/github.js";
 import { z } from "zod";
 
 const REPO = "beacons-website-sdd-demo";
@@ -13,9 +13,8 @@ const GitCommitInput = z.object({
 });
 
 export default defineTool({
-  description: "Stage and commit changes in the cloned repository sandbox. Requires approval.",
+  description: "Stage and commit changes in the cloned repository sandbox.",
   inputSchema: GitCommitInput,
-  needsApproval: always(),
   async execute(input) {
     const sandbox = await getSandbox();
 
@@ -32,8 +31,9 @@ export default defineTool({
       }
     }
 
+    const { data: user } = await getOctokit().users.getAuthenticated();
     const commitResult = await sandbox.runCommand(
-      `cd ${CLONE_DIR} && git commit -m ${JSON.stringify(input.message)}`,
+      `cd ${CLONE_DIR} && git -c user.name="${user.login}" -c user.email="${user.id}+${user.login}@users.noreply.github.com" commit -m ${JSON.stringify(input.message)}`,
     );
 
     if (commitResult.exitCode !== 0) {
