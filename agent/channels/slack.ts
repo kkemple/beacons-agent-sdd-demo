@@ -1,10 +1,9 @@
 import { connectSlackCredentials } from "@vercel/connect/ash";
 import {
-  slackRoute,
-  defineSlackAdapter,
-  type SlackAdapterContext,
+  slackChannel,
+  type SlackEventContext,
+  type SlackChannelState,
 } from "experimental-ash/channels/slack";
-import type { SlackChannelState } from "experimental-ash/channels/slack";
 
 // ---------------------------------------------------------------------------
 // Streaming state — tracks a Slack chat.startStream lifecycle per turn
@@ -17,25 +16,20 @@ interface StreamState {
   streamTs: string;
 }
 
-interface StreamingAdapterState {
-  /** Active stream for the current turn, if any. */
-  activeStream?: StreamState;
-  /** Accumulated token usage across steps in the current turn. */
-  turnUsage?: {
-    inputTokens: number;
-    outputTokens: number;
-  };
+// Extend the channel state with our streaming fields.
+// These are stored in SlackChannelState and auto-snapshotted at step boundaries.
+declare module "experimental-ash/channels/slack" {
+  interface SlackChannelState {
+    activeStream?: StreamState;
+  }
 }
-
-type AdapterCtx = SlackAdapterContext<StreamingAdapterState & SlackChannelState>;
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
 /** Start a Slack streaming message with timeline task cards. */
-async function startStream(ctx: AdapterCtx): Promise<StreamState | null> {
-  // Already have an active stream for this turn
+async function startStream(ctx: SlackEventContext): Promise<StreamState | null> {
   if (ctx.state.activeStream) return ctx.state.activeStream;
 
   try {
@@ -48,8 +42,8 @@ async function startStream(ctx: AdapterCtx): Promise<StreamState | null> {
     if (!res.ok) return null;
 
     const stream: StreamState = {
-      streamChannel: (res as any).channel,
-      streamTs: (res as any).ts,
+      streamChannel: res.channel as string,
+      streamTs: res.ts as string,
     };
     ctx.state.activeStream = stream;
     return stream;
@@ -60,7 +54,7 @@ async function startStream(ctx: AdapterCtx): Promise<StreamState | null> {
 
 /** Append chunks to the active Slack stream. */
 async function appendStream(
-  ctx: AdapterCtx,
+  ctx: SlackEventContext,
   chunks: unknown[],
 ): Promise<void> {
   const stream = ctx.state.activeStream;
@@ -73,13 +67,13 @@ async function appendStream(
       chunks,
     });
   } catch {
-    // Swallow — best-effort streaming
+    // Best-effort streaming
   }
 }
 
 /** Stop the active stream, optionally attaching footer blocks. */
 async function stopStream(
-  ctx: AdapterCtx,
+  ctx: SlackEventContext,
   blocks?: unknown[],
 ): Promise<void> {
   const stream = ctx.state.activeStream;
@@ -98,22 +92,6 @@ async function stopStream(
   }
 }
 
-/** Format a compact metadata footer from accumulated usage. */
-function formatMetadataFooter(usage?: {
-  inputTokens: number;
-  outputTokens: number;
-}): string | null {
-  if (!usage) return null;
-  const parts: string[] = [];
-  if (usage.outputTokens) {
-    parts.push(`${(usage.outputTokens / 1000).toFixed(1)}k tokens`);
-  }
-  if (usage.inputTokens) {
-    parts.push(`${(usage.inputTokens / 1000).toFixed(0)}k input`);
-  }
-  return parts.length > 0 ? parts.join("  ·  ") : null;
-}
-
 /** Produce a human-friendly label for one action request. */
 function labelForAction(action: {
   kind: string;
@@ -127,147 +105,112 @@ function labelForAction(action: {
 }
 
 // ---------------------------------------------------------------------------
-// Adapter — overrides default Slack event handlers with streaming + task cards
+// Channel — slackChannel with streaming + task card event overrides
 // ---------------------------------------------------------------------------
 
-const streamingAdapter = defineSlackAdapter({
-  // ------ Turn lifecycle ------
+export default slackChannel({
+  botName: "triage-agent",
+  credentials: connectSlackCredentials("slack/triage-agent"),
 
-  async "turn.started"(_data, ctx) {
-    // Reset per-turn streaming state
-    ctx.state.activeStream = undefined;
-    ctx.state.turnUsage = undefined;
+  events: {
+    // ------ Turn lifecycle ------
 
-    // Start the stream eagerly so tool cards appear immediately
-    await startStream(ctx);
-  },
+    async "turn.started"(_data, ctx) {
+      // Reset per-turn streaming state
+      ctx.state.activeStream = undefined;
 
-  // ------ Tool progress as task cards ------
+      // Start the stream eagerly so tool cards appear immediately
+      await startStream(ctx);
+    },
 
-  async "actions.requested"(data, ctx) {
-    // Ensure stream is open
-    await startStream(ctx);
+    // ------ Tool progress as task cards ------
 
-    // Emit a task_update for each action in the batch
-    const chunks = data.actions.map((action) => ({
-      type: "task_update",
-      id: action.callId,
-      title: labelForAction(action).slice(0, 256),
-      status: "in_progress",
-    }));
+    async "actions.requested"(data, ctx) {
+      await startStream(ctx);
 
-    await appendStream(ctx, chunks);
-  },
-
-  async "action.result"(data, ctx) {
-    const result = data.result;
-    const isError = data.status === "failed";
-
-    // Determine a summary for the task card output
-    let output: string | undefined;
-    if (isError && data.error) {
-      output = data.error.message.slice(0, 256);
-    }
-
-    await appendStream(ctx, [
-      {
+      const chunks = data.actions.map((action) => ({
         type: "task_update",
-        id: result.callId,
-        title: labelForAction(result as any).slice(0, 256),
-        status: isError ? "error" : "complete",
-        ...(output ? { output } : {}),
-      },
-    ]);
-  },
+        id: action.callId,
+        title: labelForAction(action).slice(0, 256),
+        status: "in_progress",
+      }));
 
-  // ------ Text streaming ------
+      await appendStream(ctx, chunks);
+    },
 
-  async "message.appended"(data, ctx) {
-    await appendStream(ctx, [
-      { type: "markdown_text", text: data.messageDelta },
-    ]);
-  },
+    async "action.result"(data, ctx) {
+      const result = data.result;
+      const isError = data.status === "failed";
 
-  async "message.completed"(data, ctx) {
-    // Tool-call intermediary messages — skip, the task cards tell the story
-    if (data.finishReason === "tool-calls") return;
-    if (data.message === null) return;
+      let output: string | undefined;
+      if (isError && data.error) {
+        output = data.error.message.slice(0, 256);
+      }
 
-    // If somehow no stream was started (e.g. fast single-message response),
-    // fall back to a plain post
-    if (!ctx.state.activeStream) {
-      await ctx.thread.post({ markdown: data.message });
-      return;
-    }
+      await appendStream(ctx, [
+        {
+          type: "task_update",
+          id: result.callId,
+          title: labelForAction(result as any).slice(0, 256),
+          status: isError ? "error" : "complete",
+          ...(output ? { output } : {}),
+        },
+      ]);
+    },
 
-    // The message text was already streamed via message.appended deltas,
-    // so we don't need to re-post it here. Just let the stream continue.
-  },
+    // ------ Text streaming ------
 
-  // ------ Step usage tracking ------
+    async "message.appended"(data, ctx) {
+      await appendStream(ctx, [
+        { type: "markdown_text", text: data.messageDelta },
+      ]);
+    },
 
-  async "step.completed"(data, ctx) {
-    if (data.usage) {
-      const prev = ctx.state.turnUsage ?? { inputTokens: 0, outputTokens: 0 };
-      ctx.state.turnUsage = {
-        inputTokens: prev.inputTokens + (data.usage.inputTokens ?? 0),
-        outputTokens: prev.outputTokens + (data.usage.outputTokens ?? 0),
-      };
-    }
-  },
+    async "message.completed"(data, ctx) {
+      if (data.finishReason === "tool-calls") return;
+      if (data.message === null) return;
 
-  // ------ Turn completion — stop stream with footer ------
+      // If no stream was started, fall back to a plain post
+      if (!ctx.state.activeStream) {
+        await ctx.thread.post({ markdown: data.message });
+        return;
+      }
 
-  async "turn.completed"(_data, ctx) {
-    const footer = formatMetadataFooter(ctx.state.turnUsage);
-    const blocks = footer
-      ? [
-          {
-            type: "context",
-            elements: [{ type: "mrkdwn", text: footer }],
-          },
-        ]
-      : undefined;
+      // Text was already streamed via message.appended deltas
+    },
 
-    await stopStream(ctx, blocks);
-  },
+    // ------ Turn completion — stop stream ------
 
-  async "turn.failed"(data, ctx) {
-    // Stream an error message then stop
-    await appendStream(ctx, [
-      {
-        type: "markdown_text",
-        text: `:warning: Error: ${data.message || "Something went wrong."}`,
-      },
-    ]);
-    await stopStream(ctx);
-  },
+    async "turn.completed"(_data, ctx) {
+      await stopStream(ctx);
+    },
 
-  // ------ Session failure ------
-
-  async "session.failed"(data, ctx) {
-    if (ctx.state.activeStream) {
+    async "turn.failed"(data, ctx) {
       await appendStream(ctx, [
         {
           type: "markdown_text",
-          text: `:warning: Session failed: ${data.message || "Something went wrong."}`,
+          text: `:warning: Error: ${data.message || "Something went wrong."}`,
         },
       ]);
       await stopStream(ctx);
-    } else {
-      await ctx.thread.post({
-        markdown: `:warning: Session failed: ${data.message || "Something went wrong."}\n\nStart a new thread to continue.`,
-      });
-    }
+    },
+
+    // ------ Session failure ------
+
+    async "session.failed"(data, ctx) {
+      if (ctx.state.activeStream) {
+        await appendStream(ctx, [
+          {
+            type: "markdown_text",
+            text: `:warning: Session failed: ${data.message || "Something went wrong."}`,
+          },
+        ]);
+        await stopStream(ctx);
+      } else {
+        await ctx.thread.post({
+          markdown: `:warning: Session failed: ${data.message || "Something went wrong."}\n\nStart a new thread to continue.`,
+        });
+      }
+    },
   },
-});
-
-// ---------------------------------------------------------------------------
-// Export the Slack route with the streaming adapter
-// ---------------------------------------------------------------------------
-
-export default slackRoute({
-  botName: "triage-agent",
-  credentials: connectSlackCredentials("slack/triage-agent"),
-  adapter: streamingAdapter,
 });
