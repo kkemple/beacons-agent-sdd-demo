@@ -2,26 +2,27 @@ import { connectSlackCredentials } from "@vercel/connect/ash";
 import {
   slackChannel,
   type SlackEventContext,
+  type SlackChannelState,
 } from "experimental-ash/channels/slack";
 
 // ---------------------------------------------------------------------------
 // Extend SlackChannelState with streaming fields
 // ---------------------------------------------------------------------------
 
-declare module "experimental-ash/channels/slack" {
-  interface SlackChannelState {
-    activeStream?: {
-      streamChannel: string;
-      streamTs: string;
-    };
-  }
+interface StreamingState extends SlackChannelState {
+  activeStream?: {
+    streamChannel: string;
+    streamTs: string;
+  };
 }
+
+type StreamingCtx = Omit<SlackEventContext, "state"> & { state: StreamingState };
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-async function startStream(ctx: SlackEventContext) {
+async function startStream(ctx: StreamingCtx) {
   if (ctx.state.activeStream) return ctx.state.activeStream;
 
   try {
@@ -42,7 +43,7 @@ async function startStream(ctx: SlackEventContext) {
   }
 }
 
-async function appendStream(ctx: SlackEventContext, chunks: unknown[]) {
+async function appendStream(ctx: StreamingCtx, chunks: unknown[]) {
   const stream = ctx.state.activeStream;
   if (!stream) return;
 
@@ -57,7 +58,7 @@ async function appendStream(ctx: SlackEventContext, chunks: unknown[]) {
   }
 }
 
-async function stopStream(ctx: SlackEventContext, blocks?: unknown[]) {
+async function stopStream(ctx: StreamingCtx, blocks?: unknown[]) {
   const stream = ctx.state.activeStream;
   if (!stream) return;
 
@@ -95,14 +96,16 @@ export default slackChannel({
 
   events: {
     async "turn.started"(_data, ctx) {
-      ctx.state.activeStream = undefined;
-      await startStream(ctx);
+      const sctx = ctx as StreamingCtx;
+      sctx.state.activeStream = undefined;
+      await startStream(sctx);
     },
 
     async "actions.requested"(data, ctx) {
-      await startStream(ctx);
+      const sctx = ctx as StreamingCtx;
+      await startStream(sctx);
       await appendStream(
-        ctx,
+        sctx,
         data.actions.map((action) => ({
           type: "task_update",
           id: action.callId,
@@ -113,6 +116,7 @@ export default slackChannel({
     },
 
     async "action.result"(data, ctx) {
+      const sctx = ctx as StreamingCtx;
       const result = data.result;
       const isError = data.status === "failed";
 
@@ -121,7 +125,7 @@ export default slackChannel({
         output = data.error.message.slice(0, 256);
       }
 
-      await appendStream(ctx, [
+      await appendStream(sctx, [
         {
           type: "task_update",
           id: result.callId,
@@ -133,7 +137,7 @@ export default slackChannel({
     },
 
     async "message.appended"(data, ctx) {
-      await appendStream(ctx, [
+      await appendStream(ctx as StreamingCtx, [
         { type: "markdown_text", text: data.messageDelta },
       ]);
     },
@@ -142,7 +146,7 @@ export default slackChannel({
       if (data.finishReason === "tool-calls") return;
       if (data.message === null) return;
 
-      if (!ctx.state.activeStream) {
+      if (!(ctx as StreamingCtx).state.activeStream) {
         await ctx.thread.post({ markdown: data.message });
         return;
       }
@@ -150,28 +154,30 @@ export default slackChannel({
     },
 
     async "turn.completed"(_data, ctx) {
-      await stopStream(ctx);
+      await stopStream(ctx as StreamingCtx);
     },
 
     async "turn.failed"(data, ctx) {
-      await appendStream(ctx, [
+      const sctx = ctx as StreamingCtx;
+      await appendStream(sctx, [
         {
           type: "markdown_text",
           text: `:warning: Error: ${data.message || "Something went wrong."}`,
         },
       ]);
-      await stopStream(ctx);
+      await stopStream(sctx);
     },
 
     async "session.failed"(data, ctx) {
-      if (ctx.state.activeStream) {
-        await appendStream(ctx, [
+      const sctx = ctx as StreamingCtx;
+      if (sctx.state.activeStream) {
+        await appendStream(sctx, [
           {
             type: "markdown_text",
             text: `:warning: Session failed: ${data.message || "Something went wrong."}`,
           },
         ]);
-        await stopStream(ctx);
+        await stopStream(sctx);
       } else {
         await ctx.thread.post({
           markdown: `:warning: Session failed: ${data.message || "Something went wrong."}\n\nStart a new thread to continue.`,
