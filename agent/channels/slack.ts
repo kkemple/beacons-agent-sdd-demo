@@ -5,29 +5,24 @@ import {
 } from "experimental-ash/channels/slack";
 
 // ---------------------------------------------------------------------------
-// Streaming state — module-scoped, keyed by thread
+// Extend SlackChannelState with streaming fields
 // ---------------------------------------------------------------------------
 
-interface StreamState {
-  streamChannel: string;
-  streamTs: string;
-}
-
-/** Active streams keyed by `channelId:threadTs`. */
-const activeStreams = new Map<string, StreamState>();
-
-function streamKey(ctx: SlackEventContext): string {
-  return `${ctx.slack.channelId}:${ctx.slack.threadTs}`;
+declare module "experimental-ash/channels/slack" {
+  interface SlackChannelState {
+    activeStream?: {
+      streamChannel: string;
+      streamTs: string;
+    };
+  }
 }
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-async function startStream(ctx: SlackEventContext): Promise<StreamState | null> {
-  const key = streamKey(ctx);
-  const existing = activeStreams.get(key);
-  if (existing) return existing;
+async function startStream(ctx: SlackEventContext) {
+  if (ctx.state.activeStream) return ctx.state.activeStream;
 
   try {
     const res = await ctx.slack.request("chat.startStream", {
@@ -37,22 +32,18 @@ async function startStream(ctx: SlackEventContext): Promise<StreamState | null> 
     });
     if (!res.ok) return null;
 
-    const stream: StreamState = {
+    ctx.state.activeStream = {
       streamChannel: res.channel as string,
       streamTs: res.ts as string,
     };
-    activeStreams.set(key, stream);
-    return stream;
+    return ctx.state.activeStream;
   } catch {
     return null;
   }
 }
 
-async function appendStream(
-  ctx: SlackEventContext,
-  chunks: unknown[],
-): Promise<void> {
-  const stream = activeStreams.get(streamKey(ctx));
+async function appendStream(ctx: SlackEventContext, chunks: unknown[]) {
+  const stream = ctx.state.activeStream;
   if (!stream) return;
 
   try {
@@ -66,12 +57,8 @@ async function appendStream(
   }
 }
 
-async function stopStream(
-  ctx: SlackEventContext,
-  blocks?: unknown[],
-): Promise<void> {
-  const key = streamKey(ctx);
-  const stream = activeStreams.get(key);
+async function stopStream(ctx: SlackEventContext, blocks?: unknown[]) {
+  const stream = ctx.state.activeStream;
   if (!stream) return;
 
   try {
@@ -83,7 +70,7 @@ async function stopStream(
   } catch {
     // Swallow
   } finally {
-    activeStreams.delete(key);
+    ctx.state.activeStream = undefined;
   }
 }
 
@@ -108,7 +95,7 @@ export default slackChannel({
 
   events: {
     async "turn.started"(_data, ctx) {
-      activeStreams.delete(streamKey(ctx));
+      ctx.state.activeStream = undefined;
       await startStream(ctx);
     },
 
@@ -155,8 +142,7 @@ export default slackChannel({
       if (data.finishReason === "tool-calls") return;
       if (data.message === null) return;
 
-      // If no stream was started, fall back to a plain post
-      if (!activeStreams.has(streamKey(ctx))) {
+      if (!ctx.state.activeStream) {
         await ctx.thread.post({ markdown: data.message });
         return;
       }
@@ -178,7 +164,7 @@ export default slackChannel({
     },
 
     async "session.failed"(data, ctx) {
-      if (activeStreams.has(streamKey(ctx))) {
+      if (ctx.state.activeStream) {
         await appendStream(ctx, [
           {
             type: "markdown_text",
