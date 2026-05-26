@@ -2,35 +2,32 @@ import { connectSlackCredentials } from "@vercel/connect/ash";
 import {
   slackChannel,
   type SlackEventContext,
-  type SlackChannelState,
 } from "experimental-ash/channels/slack";
 
 // ---------------------------------------------------------------------------
-// Streaming state — tracks a Slack chat.startStream lifecycle per turn
+// Streaming state — module-scoped, keyed by thread
 // ---------------------------------------------------------------------------
 
 interface StreamState {
-  /** Slack streaming channel id (from chat.startStream response). */
   streamChannel: string;
-  /** Slack streaming message ts (from chat.startStream response). */
   streamTs: string;
 }
 
-// Extend the channel state with our streaming fields.
-// These are stored in SlackChannelState and auto-snapshotted at step boundaries.
-declare module "experimental-ash/channels/slack" {
-  interface SlackChannelState {
-    activeStream?: StreamState;
-  }
+/** Active streams keyed by `channelId:threadTs`. */
+const activeStreams = new Map<string, StreamState>();
+
+function streamKey(ctx: SlackEventContext): string {
+  return `${ctx.slack.channelId}:${ctx.slack.threadTs}`;
 }
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Start a Slack streaming message with timeline task cards. */
 async function startStream(ctx: SlackEventContext): Promise<StreamState | null> {
-  if (ctx.state.activeStream) return ctx.state.activeStream;
+  const key = streamKey(ctx);
+  const existing = activeStreams.get(key);
+  if (existing) return existing;
 
   try {
     const res = await ctx.slack.request("chat.startStream", {
@@ -38,26 +35,24 @@ async function startStream(ctx: SlackEventContext): Promise<StreamState | null> 
       thread_ts: ctx.slack.threadTs,
       task_display_mode: "timeline",
     });
-
     if (!res.ok) return null;
 
     const stream: StreamState = {
       streamChannel: res.channel as string,
       streamTs: res.ts as string,
     };
-    ctx.state.activeStream = stream;
+    activeStreams.set(key, stream);
     return stream;
   } catch {
     return null;
   }
 }
 
-/** Append chunks to the active Slack stream. */
 async function appendStream(
   ctx: SlackEventContext,
   chunks: unknown[],
 ): Promise<void> {
-  const stream = ctx.state.activeStream;
+  const stream = activeStreams.get(streamKey(ctx));
   if (!stream) return;
 
   try {
@@ -67,16 +62,16 @@ async function appendStream(
       chunks,
     });
   } catch {
-    // Best-effort streaming
+    // Best-effort
   }
 }
 
-/** Stop the active stream, optionally attaching footer blocks. */
 async function stopStream(
   ctx: SlackEventContext,
   blocks?: unknown[],
 ): Promise<void> {
-  const stream = ctx.state.activeStream;
+  const key = streamKey(ctx);
+  const stream = activeStreams.get(key);
   if (!stream) return;
 
   try {
@@ -88,11 +83,10 @@ async function stopStream(
   } catch {
     // Swallow
   } finally {
-    ctx.state.activeStream = undefined;
+    activeStreams.delete(key);
   }
 }
 
-/** Produce a human-friendly label for one action request. */
 function labelForAction(action: {
   kind: string;
   toolName?: string;
@@ -113,29 +107,22 @@ export default slackChannel({
   credentials: connectSlackCredentials("slack/triage-agent"),
 
   events: {
-    // ------ Turn lifecycle ------
-
     async "turn.started"(_data, ctx) {
-      // Reset per-turn streaming state
-      ctx.state.activeStream = undefined;
-
-      // Start the stream eagerly so tool cards appear immediately
+      activeStreams.delete(streamKey(ctx));
       await startStream(ctx);
     },
 
-    // ------ Tool progress as task cards ------
-
     async "actions.requested"(data, ctx) {
       await startStream(ctx);
-
-      const chunks = data.actions.map((action) => ({
-        type: "task_update",
-        id: action.callId,
-        title: labelForAction(action).slice(0, 256),
-        status: "in_progress",
-      }));
-
-      await appendStream(ctx, chunks);
+      await appendStream(
+        ctx,
+        data.actions.map((action) => ({
+          type: "task_update",
+          id: action.callId,
+          title: labelForAction(action).slice(0, 256),
+          status: "in_progress",
+        })),
+      );
     },
 
     async "action.result"(data, ctx) {
@@ -158,8 +145,6 @@ export default slackChannel({
       ]);
     },
 
-    // ------ Text streaming ------
-
     async "message.appended"(data, ctx) {
       await appendStream(ctx, [
         { type: "markdown_text", text: data.messageDelta },
@@ -171,15 +156,12 @@ export default slackChannel({
       if (data.message === null) return;
 
       // If no stream was started, fall back to a plain post
-      if (!ctx.state.activeStream) {
+      if (!activeStreams.has(streamKey(ctx))) {
         await ctx.thread.post({ markdown: data.message });
         return;
       }
-
       // Text was already streamed via message.appended deltas
     },
-
-    // ------ Turn completion — stop stream ------
 
     async "turn.completed"(_data, ctx) {
       await stopStream(ctx);
@@ -195,10 +177,8 @@ export default slackChannel({
       await stopStream(ctx);
     },
 
-    // ------ Session failure ------
-
     async "session.failed"(data, ctx) {
-      if (ctx.state.activeStream) {
+      if (activeStreams.has(streamKey(ctx))) {
         await appendStream(ctx, [
           {
             type: "markdown_text",
